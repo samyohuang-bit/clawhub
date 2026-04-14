@@ -1,0 +1,26 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Run DB migrations
+        run: psql $DATABASE_URL -f db/migrations/001_initial_schema.sql
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Vercel auto-deploys on push to main — no explicit deploy step needed
+      # This job validates the build succeeds before Vercel picks it up
