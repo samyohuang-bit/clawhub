@@ -1,44 +1,128 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { jwtVerify } from "jose";
+import { recordUsage, type UsageEvent } from "@/lib/billing";
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || "change-me-in-production"
+);
 
 /**
  * POST /api/billing/usage — Record usage event(s)
- * GET  /api/billing/usage  — Query usage
+ * Body: { events: UsageEvent[] }
  *
- * Phase 1: Free tier with 100-call monthly limit
- * Phase 2: Stripe integration, plan management
+ * Used by agents to report metered usage.
  */
-
 export async function POST(request: NextRequest) {
-  // TODO: Verify auth token
-  // TODO: Validate usage events
-  // TODO: Check quota (free tier: 100 calls/month)
-  // TODO: Store in TimescaleDB
+  // Verify auth
+  const cookieStore = await cookies();
+  const token =
+    cookieStore.get("auth_token")?.value ??
+    request.headers.get("Authorization")?.replace("Bearer ", "");
 
-  const body = await request.json();
+  if (!token) {
+    return NextResponse.json(
+      { ok: false, error: "Not authenticated" },
+      { status: 401 }
+    );
+  }
 
-  return NextResponse.json(
-    {
-      ok: false,
-      error: "Usage recording not yet implemented",
-      hint: "Free tier: 100 agent calls/month",
-    },
-    { status: 501 }
-  );
+  let userId: string;
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    userId = payload.sub as string;
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Invalid token" },
+      { status: 401 }
+    );
+  }
+
+  // Parse body
+  const body = await request.json().catch(() => ({}));
+  const events: UsageEvent[] = body.events ?? [];
+
+  if (!events.length) {
+    return NextResponse.json(
+      { ok: false, error: "No events provided" },
+      { status: 400 }
+    );
+  }
+
+  // Validate events
+  for (const event of events) {
+    if (!event.event_type || !event.quantity || !event.unit) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid event: missing required fields" },
+        { status: 400 }
+      );
+    }
+  }
+
+  try {
+    const result = await recordUsage(userId, events);
+
+    if (result.quotaExceeded) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Quota exceeded",
+          balance: result.balance,
+          hint: "Upgrade your plan or purchase credits",
+        },
+        { status: 429 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      data: {
+        recorded: events.length,
+        balance: result.balance,
+      },
+    });
+  } catch (error) {
+    console.error("Usage recording error:", error);
+    return NextResponse.json(
+      { ok: false, error: "Failed to record usage" },
+      { status: 500 }
+    );
+  }
 }
 
+/**
+ * GET /api/billing/usage — Query usage
+ */
 export async function GET(request: NextRequest) {
-  // TODO: Verify auth token
-  // TODO: Query usage_events table with filters
+  const cookieStore = await cookies();
+  const token =
+    cookieStore.get("auth_token")?.value ??
+    request.headers.get("Authorization")?.replace("Bearer ", "");
 
-  return NextResponse.json({
-    ok: true,
-    data: {
-      events: [],
-      total: 0,
-      period: {
-        start: new Date().toISOString(),
-        end: new Date().toISOString(),
-      },
-    },
-  });
+  if (!token) {
+    return NextResponse.json(
+      { ok: false, error: "Not authenticated" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { getUsageBySkill } = await import("@/lib/billing");
+
+    const { searchParams } = new URL(request.url);
+    const month = searchParams.get("month") ?? undefined;
+
+    const breakdown = await getUsageBySkill(payload.sub as string, month);
+
+    return NextResponse.json({
+      ok: true,
+      data: { breakdown },
+    });
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Invalid token" },
+      { status: 401 }
+    );
+  }
 }
