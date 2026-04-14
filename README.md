@@ -1,206 +1,139 @@
 # ClawHub — Open Source Agent Marketplace
 
-The public registry for OpenClaw skills and plugins.
+The public registry for [OpenClaw](https://docs.openclaw.ai) skills and plugins.
 
-Browse, discover, install, and publish agent skills. Open-source frontend for [clawhub.ai](https://clawhub.ai).
-
-## What is this?
-
-ClawHub is a marketplace where AI agent skills are:
-- **Published** as versioned bundles (files + metadata)
-- **Discovered** via search, tags, and usage signals
-- **Installed** into OpenClaw workspaces with one command
-- **Reviewed** by the community (stars, comments, reports)
-
-This repo contains the **open-source frontend** and **registry API reference** for the ClawHub platform.
+Browse, discover, install, and publish AI agent skills. This is the open-source frontend and API for [clawhub.ai](https://clawhub.ai).
 
 ## Features
 
-- 🔍 **Semantic Search** — Find skills by natural language description
-- 📦 **Versioned Packages** — Every publish creates a semver version with changelog
-- ⭐ **Community Signals** — Stars, downloads, and comments for quality ranking
+- 🔍 **Semantic Search** — pgvector-powered search by natural language description
+- 📦 **Versioned Packages** — Semver with changelogs, rollbacks, and audit trails
+- ⭐ **Stars & Community** — Quality ranking via stars, downloads, and usage signals
 - 🛡️ **Moderation** — Report abuse, auto-hide after 3+ reports, moderator tools
-- 🔌 **Plugin Support** — Install plugins alongside skills
-- 📱 **Responsive UI** — Works on desktop and mobile
-- 🌐 **API-First** — Full REST API for CLI and programmatic access
+- 💳 **Metered Billing** — Pay-per-use with credit packs and plan subscriptions
+- 🔐 **GitHub OAuth** — Secure authentication with CLI API token generation
+- 🌐 **OpenClaw Compatible** — Native `openclaw skills search/install/update` support
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Set up environment
 cp .env.example .env.local
-
-# Run development server
 npm run dev
-
-# Open http://localhost:3000
+# → http://localhost:3000
 ```
+
+## API Endpoints (22)
+
+| Category | Endpoints | Description |
+|----------|-----------|-------------|
+| Auth | 4 | GitHub OAuth, JWT sessions, CLI tokens |
+| Registry v1 | 7 | Search, skills CRUD, packages, downloads |
+| Billing | 6 | Usage metering, plans, Stripe checkout, webhooks |
+| Moderation | 3 | Reports, queue, actions |
+| System | 1 | Health check |
+
+Full API reference: [clawhub.ai/docs](https://clawhub.ai/docs) or [`docs/API.md`](docs/API.md)
+
+## OpenClaw CLI Integration
+
+ClawHub is the default registry for OpenClaw. These commands work out of the box:
+
+```bash
+openclaw skills search "calendar"     # → GET /api/v1/search
+openclaw skills install my-skill      # → GET /api/v1/skills/:slug
+openclaw skills update --all          # → version check + download
+openclaw plugins install clawhub:pkg  # → GET /api/v1/packages/:name/download
+```
+
+Configure with `OPENCLAW_CLAWHUB_URL` env var (default: `https://clawhub.ai`).
 
 ## Architecture
 
 ```
 clawhub/
-├── app/                    # Next.js App Router
-│   ├── page.tsx            # Landing page
-│   ├── search/             # Search & browse
-│   ├── skill/[slug]/       # Skill detail pages
-│   ├── user/[username]/    # User profiles
-│   ├── publish/            # Publish wizard
-│   └── api/                # Registry API routes
-│       ├── skills/         # Skill CRUD
-│       ├── search/         # Search endpoint
-│       ├── auth/           # Authentication
-│       └── moderation/     # Report & moderate
-├── components/             # React components
-├── lib/                    # Shared utilities
-│   ├── registry.ts         # Registry client
-│   ├── search.ts           # Search logic
-│   └── auth.ts             # Auth helpers
-├── types/                  # TypeScript definitions
-└── public/                 # Static assets
+├── app/
+│   ├── page.tsx                 # Landing page
+│   ├── search/                  # Search & browse
+│   ├── skill/[slug]/            # Skill detail
+│   ├── billing/                 # Billing dashboard
+│   ├── docs/                    # API documentation
+│   └── api/
+│       ├── auth/                # GitHub OAuth flow
+│       ├── v1/                  # Registry API (OpenClaw compatible)
+│       ├── billing/             # Usage, plans, Stripe
+│       └── moderation/          # Reports & actions
+├── lib/
+│   ├── db.ts                    # PostgreSQL client
+│   ├── search.ts                # Vector + full-text search
+│   ├── auth.ts                  # OAuth & JWT helpers
+│   ├── billing.ts               # Usage metering & quotas
+│   └── stripe.ts                # Stripe checkout & webhooks
+├── db/migrations/               # PostgreSQL schema
+├── docs/                        # Architecture docs
+└── .github/workflows/           # CI/CD pipeline
 ```
 
-## API Reference
+## Billing
 
-### Skills
+| Plan | Price | Calls/mo | Overage |
+|------|-------|----------|---------|
+| Free | $0 | 100 | Hard limit |
+| Pro | $29 | 5,000 | $0.008/call |
+| Team | $99 | 25,000 | $0.006/call |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/skills` | List skills (paginated) |
-| GET | `/api/skills/[slug]` | Get skill details |
-| POST | `/api/skills` | Publish a new skill |
-| PUT | `/api/skills/[slug]` | Update a skill |
-| DELETE | `/api/skills/[slug]` | Delete a skill (owner/admin) |
-| POST | `/api/skills/[slug]/versions` | Publish a new version |
-| GET | `/api/skills/[slug]/versions` | List all versions |
+Credit packs: Starter ($10/1.5K), Power ($45/8K), Ultimate ($150/30K)
 
-### Search
+Author revenue share: 85% to author, 15% platform fee.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/search?q=...` | Full-text + vector search |
-| GET | `/api/search/tags?tag=...` | Search by tag |
+## Tech Stack
 
-### Auth
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/login` | GitHub OAuth login |
-| POST | `/api/auth/token` | API token generation |
-| GET | `/api/auth/me` | Current user info |
-
-### Moderation
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/moderation/report` | Report a skill |
-| GET | `/api/moderation/queue` | Moderator queue |
-| POST | `/api/moderation/action` | Hide/unhide/delete/ban |
-
-## Data Model
-
-```typescript
-interface Skill {
-  slug: string;           // URL-friendly identifier
-  name: string;           // Display name
-  summary: string;        // Short description
-  description: string;    // Full SKILL.md content
-  tags: string[];         // Searchable tags
-  author: User;           // Publisher
-  versions: SkillVersion[];
-  stars: number;          // Community stars
-  downloads: number;      // Install count
-  createdAt: Date;
-  updatedAt: Date;
-  status: 'active' | 'hidden' | 'deleted' | 'banned';
-}
-
-interface SkillVersion {
-  semver: string;         // e.g., "1.2.3"
-  changelog: string;      // What changed
-  files: SkillFile[];     // Bundle contents
-  publishedAt: Date;
-  publishedBy: User;
-}
-
-interface User {
-  username: string;
-  githubId: string;       // GitHub-linked auth
-  displayName: string;
-  avatarUrl: string;
-  skills: Skill[];        // Published skills
-  createdAt: Date;
-}
-```
-
-## CLI Integration
-
-The ClawHub website is designed to work with the `clawhub` CLI and native `openclaw` commands:
-
-```bash
-# Search from CLI
-clawhub search "calendar"
-# → Calls GET /api/search?q=calendar
-
-# Install from CLI
-clawhub install my-skill
-# → Downloads from GET /api/skills/my-skill/versions/latest/download
-
-# Publish from CLI
-clawhub publish ./my-skill --slug my-skill --version 1.0.0
-# → Calls POST /api/skills/my-skill/versions
-```
-
-## Environment Variables
-
-```env
-# Database
-DATABASE_URL=postgresql://...
-
-# Auth
-GITHUB_CLIENT_ID=...
-GITHUB_CLIENT_SECRET=...
-JWT_SECRET=...
-
-# Search
-OPENAI_API_KEY=...          # For vector embeddings
-
-# Storage
-S3_BUCKET=...
-S3_REGION=...
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-```
+- **Framework:** Next.js 15 (App Router), React 19, TypeScript
+- **Database:** PostgreSQL + pgvector for semantic search
+- **Auth:** GitHub OAuth + JWT (jose)
+- **Payments:** Stripe (checkout, subscriptions, webhooks)
+- **Styling:** Tailwind CSS v4
+- **CI/CD:** GitHub Actions + Vercel
 
 ## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Run dev server
-npm run dev
-
-# Run tests
-npm test
-
-# Lint
-npm run lint
-
-# Build for production
-npm run build
+npm install          # Install dependencies
+npm run dev          # Dev server (localhost:3000)
+npm run build        # Production build
+npm run lint         # ESLint
+npm test             # Vitest
 ```
 
-## Contributing
+### Database Setup
 
-1. Fork the repo
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a PR
+```bash
+# Create database
+createdb clawhub
+
+# Run migrations
+psql clawhub -f db/migrations/001_initial_schema.sql
+psql clawhub -f db/migrations/002_billing.sql
+```
+
+### Environment Variables
+
+See [`.env.example`](.env.example) for all required variables:
+
+- `DATABASE_URL` — PostgreSQL connection string
+- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` — GitHub OAuth
+- `JWT_SECRET` — JWT signing key
+- `OPENAI_API_KEY` — For vector embeddings (search)
+- `STRIPE_SECRET_KEY` — Stripe payments
+- `STRIPE_WEBHOOK_SECRET` — Stripe webhook verification
+
+## Documentation
+
+- [API Reference](docs/API.md) — All 22 endpoints with examples
+- [Contributing Guide](docs/CONTRIBUTING.md) — Development setup and PR process
+- [Billing Architecture](docs/BILLING-ARCHITECTURE.md) — Metered billing design
+- [Billing Dashboard](docs/BILLING-DASHBOARD.md) — UI/UX specifications
+- [OpenClaw Integration](docs/OPENCLAW-INTEGRATION.md) — CLI ↔ API mapping
 
 ## License
 
