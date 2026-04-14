@@ -1,118 +1,58 @@
 # ClawHub API Reference
 
-Base URL: `https://clawhub.ai/api`
+Base URL: `https://clawhub.ai`
 
 ## Authentication
 
-All write endpoints require authentication. Include a JWT token or API token:
+All write endpoints require authentication. Include a JWT token in the `Authorization` header or use the auth cookie.
 
 ```
 Authorization: Bearer <token>
 ```
 
-### POST /auth/login
-GitHub OAuth flow initiation.
+### Auth Flow
 
-**Response:** Redirect to GitHub
-
-### POST /auth/token
-Generate an API token for CLI use.
-
-**Headers:** `Authorization: Bearer <jwt>`
-
-**Response:**
-```json
-{
-  "ok": true,
-  "data": {
-    "token": "chub_abc123...",
-    "prefix": "chub_",
-    "createdAt": "2026-04-14T00:00:00Z"
-  }
-}
-```
-
-### GET /auth/me
-Get current user profile.
-
-**Response:**
-```json
-{
-  "ok": true,
-  "data": {
-    "username": "octocat",
-    "githubId": "583231",
-    "displayName": "The Octocat",
-    "avatarUrl": "https://avatars.githubusercontent.com/u/583231",
-    "createdAt": "2026-03-01T00:00:00Z"
-  }
-}
-```
+1. `GET /api/auth/login` → Redirect to GitHub OAuth
+2. GitHub redirects to `/api/auth/callback?code=...&state=...`
+3. Callback creates/updates user, issues JWT cookie
+4. Use cookie or `Authorization: Bearer <jwt>` for API calls
+5. `POST /api/auth/me` → Generate CLI API token (`chub_` prefix)
 
 ---
 
-## Skills
+## Registry v1 (OpenClaw Compatible)
 
-### GET /skills
-List skills with pagination.
+These endpoints match what OpenClaw CLI expects.
 
-**Query Params:**
+### GET /api/v1/search
+
+Semantic + full-text search for skills.
+
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
+| q | string | "" | Search query |
+| tags | string | — | Comma-separated tags |
 | page | int | 1 | Page number |
 | limit | int | 20 | Results per page (max 100) |
-| sort | string | recent | `recent`, `stars`, `downloads` |
+| sort | string | relevance | relevance, stars, downloads, recent |
 
-**Response:**
-```json
-{
-  "ok": true,
-  "data": {
-    "skills": [...],
-    "total": 150,
-    "page": 1,
-    "totalPages": 8
-  }
-}
-```
+### GET /api/v1/skills
 
-### GET /skills/:slug
-Get skill details including latest version.
+List skills (paginated).
 
-**Response:**
-```json
-{
-  "ok": true,
-  "data": {
-    "slug": "my-skill",
-    "name": "My Skill",
-    "summary": "Does amazing things",
-    "description": "# My Skill\nFull SKILL.md content...",
-    "tags": ["productivity", "calendar"],
-    "author": { "username": "octocat", ... },
-    "latestVersion": "1.2.0",
-    "stars": 42,
-    "downloads": 1337,
-    "createdAt": "2026-03-15T00:00:00Z",
-    "updatedAt": "2026-04-10T00:00:00Z",
-    "status": "active"
-  }
-}
-```
+### POST /api/v1/skills
 
-### POST /skills
-Publish a new skill.
+Publish a new skill. Requires auth.
 
-**Headers:** `Authorization: Bearer <token>`
-
-**Body:**
 ```json
 {
   "slug": "my-skill",
   "name": "My Skill",
+  "summary": "Short description",
+  "description": "Full SKILL.md content",
+  "tags": ["productivity"],
   "version": "1.0.0",
   "changelog": "Initial release",
-  "tags": ["productivity"],
   "files": [
     { "path": "SKILL.md", "content": "..." },
     { "path": "scripts/run.sh", "content": "..." }
@@ -120,71 +60,113 @@ Publish a new skill.
 }
 ```
 
-### GET /skills/:slug/versions
-List all versions of a skill.
+Validation:
+- `slug`: lowercase alphanumeric + hyphens, 2-50 chars
+- `version`: semver format
+- `files`: must include `SKILL.md`
+- Account must be ≥1 week old
 
-### POST /skills/:slug/versions
-Publish a new version of an existing skill.
+### GET /api/v1/skills/:slug
 
-**Headers:** `Authorization: Bearer <token>`
+Get skill details with versions.
+
+### POST/DELETE/GET /api/v1/skills/:slug/star
+
+Star/unstar/check star status.
+
+### GET /api/v1/packages/:name
+
+Package detail (alias for skills).
+
+### GET /api/v1/packages/:name/versions/:version
+
+Specific version detail.
+
+### GET /api/v1/packages/:name/download
+
+Download package bundle.
 
 ---
 
-## Search
+## Billing
 
-### GET /search
-Full-text + vector search.
+### GET /api/billing/balance
 
-**Query Params:**
-| Param | Type | Description |
-|-------|------|-------------|
-| q | string | Search query |
-| tags | string | Comma-separated tags |
-| page | int | Page number |
-| limit | int | Results per page |
-| sort | string | `relevance`, `stars`, `downloads`, `recent` |
+Account balance, plan info, current usage.
+
+### POST /api/billing/usage
+
+Record usage events (batched).
+
+```json
+{
+  "events": [
+    { "event_type": "agent_call", "quantity": 1, "unit": "calls", "skill_slug": "my-skill" },
+    { "event_type": "token", "quantity": 1500, "unit": "tokens" }
+  ]
+}
+```
+
+Returns 429 if free tier quota exceeded.
+
+### GET /api/billing/usage
+
+Usage breakdown by skill.
+
+### POST /api/billing/plan
+
+Change plan.
+
+```json
+{ "plan": "pro" }
+```
+
+### POST /api/billing/checkout
+
+Create Stripe checkout session.
+
+```json
+{ "type": "credits", "pack": "power" }
+// or
+{ "type": "subscription", "plan": "pro" }
+```
+
+### POST /api/billing/webhook
+
+Stripe webhook handler (raw body required).
 
 ---
 
 ## Moderation
 
-### POST /moderation/report
-Report a skill for review.
+### POST /api/moderation/report
 
-**Headers:** `Authorization: Bearer <token>`
+Report a skill (auth required).
 
-**Body:**
 ```json
-{
-  "skillSlug": "bad-skill",
-  "reason": "Contains malicious code"
-}
+{ "skillSlug": "bad-skill", "reason": "Contains malicious code" }
 ```
 
-### GET /moderation/queue
-Get pending reports (moderator only).
+Auto-hide after 3 unique reports.
 
-### POST /moderation/action
+### GET /api/moderation/queue
+
+Pending reports (moderator only).
+
+### POST /api/moderation/action
+
 Take moderation action (moderator only).
 
-**Body:**
 ```json
-{
-  "skillSlug": "bad-skill",
-  "action": "hide",  // hide | unhide | delete | ban
-  "reason": "Violates ToS"
-}
+{ "skillSlug": "bad-skill", "action": "hide" }
 ```
+
+Actions: hide, unhide, delete, ban
 
 ---
 
-## Stars
+## System
 
-### POST /skills/:slug/star
-Star a skill.
+### GET /api/health
 
-### DELETE /skills/:slug/star
-Unstar a skill.
-
-### GET /skills/:slug/stars
-Get star count and whether current user has starred.
+Health check. Returns service status and version.
